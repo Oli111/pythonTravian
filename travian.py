@@ -58,20 +58,34 @@ class TravianPlayer(object):
             return func(self, *args, **kwargs)
         return switch
 
-    @switch_to_hero_adventures
-    def get_avaiblable_adventures(self):
-        pass
+    def switch_to_hero(func):
+        def switch(self, *args, **kwargs):
+            if "hero.php?t=3" not in self.driver.current_url:
+                self.driver.get(self.server + "hero.php")
+            return func(self, *args, **kwargs)
+        return switch
+
+    @switch_to_hero
+    def get_hero_health(self):
+        power = self.driver.find_element_by_class_name("powervalue").text
+        power = power.strip("\u202c%\u202c")
+        power = power.strip("\u202d\u202d")
+        power = int(power)
+        print("Hero's health is: " + str(power) + "%")
+        time.sleep(2)
+        return(power)
 
     @switch_to_hero_adventures
-    def go_to_hero_adventure(self):
+    def go_to_hero_adventure(self, _at_least_health: int = 20):
+        _flag_hero_has_enough_health = _at_least_health < get_hero_health()
         _flag_are_there_adventures = len(self.driver.find_elements_by_class_name("gotoAdventure"))>0
-        if _flag_are_there_adventures:
+        if (_flag_are_there_adventures and _flag_hero_has_enough_health):
             adventure_link = self.driver.find_element_by_class_name("gotoAdventure").get_attribute("href")
             self.driver.get(adventure_link)
             button_adventure = self.driver.find_element_by_class_name("startAdventure")
             button_adventure.click()
         else:
-            print("There are no adventures for hero to go on or hero is not present in the village.")
+            print("There are no adventures for hero to go on or hero is not present in the village. Or not enough health.")
 
     @switch_to_dorf1
     def create_data_frame_available_upgrades(self):
@@ -325,7 +339,7 @@ player1 = TravianPlayer("Olie", "mu694ek","https://ts8.anglosphere.travian.com/"
 
 
 player1.login()
-player1.go_to_hero_adventure()
+player1.get_hero_health()
 # player2.login()
 
 
@@ -341,7 +355,7 @@ player1.go_to_hero_adventure()
 # print(player1.driver.find_element_by_css_selector("div.name").text)
 
 #
-player1.create_data_frame_available_buildings()
+# player1.create_data_frame_available_buildings()
 while True:
     print("Checking available upgrades")
     try:

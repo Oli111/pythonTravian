@@ -16,11 +16,11 @@ driverPathLocale = "d:\chromeDriver\chromedriver.exe"
 
 # EN
 #
-# level_translation = " Level "
-# village_center = "Buildings"
-# fields_types = ["Woodcutter", "Clay Pit", "Iron Mine", "Cropland"]
-# done_translation = " hrs. done at "
-# construct_new_building_translation = "Construct new building"
+level_translation = " Level "
+village_center = "Buildings"
+fields_types = ["Woodcutter", "Clay Pit", "Iron Mine", "Cropland"]
+done_translation = " hrs. done at "
+construct_new_building_translation = "Construct new building"
 
 class TravianPlayer(object):
     def __init__(self, username, password, server):
@@ -64,10 +64,14 @@ class TravianPlayer(object):
 
     @switch_to_hero_adventures
     def go_to_hero_adventure(self):
-        adventure_link = self.driver.find_element_by_class_name("gotoAdventure").get_attribute("href")
-        self.driver.get(adventure_link)
-        button_adventure = self.driver.find_element_by_class_name("startAdventure")
-        button_adventure.click()
+        _flag_are_there_adventures = len(self.driver.find_elements_by_class_name("gotoAdventure"))>0
+        if _flag_are_there_adventures:
+            adventure_link = self.driver.find_element_by_class_name("gotoAdventure").get_attribute("href")
+            self.driver.get(adventure_link)
+            button_adventure = self.driver.find_element_by_class_name("startAdventure")
+            button_adventure.click()
+        else:
+            print("There are no adventures for hero to go on or hero is not present in the village.")
 
     @switch_to_dorf1
     def create_data_frame_available_upgrades(self):
@@ -315,13 +319,16 @@ class TravianPlayer(object):
 
 
 
-player1 = TravianPlayer("Olie", "mu694ek","https://ts20.czsk.travian.com/")
+# player1 = TravianPlayer("Olie", "mu694ek","https://ts20.czsk.travian.com/")
 
-#player1 = TravianPlayer("Olie", "mu694ek","https://ts8.anglosphere.travian.com/")
+player1 = TravianPlayer("Olie", "mu694ek","https://ts8.anglosphere.travian.com/")
 
 
 player1.login()
+player1.go_to_hero_adventure()
 # player2.login()
+
+
 #player1.do_build_new_building("City Wall")
 # player1.create_data_frame_available_buildings()
 #player1.do_upgrade_building("Main Building", 3)

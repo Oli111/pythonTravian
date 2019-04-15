@@ -16,11 +16,11 @@ driverPathLocale = "d:\chromeDriver\chromedriver.exe"
 
 # EN
 #
-level_translation = " Level "
-village_center = "Buildings"
-fields_types = ["Woodcutter", "Clay Pit", "Iron Mine", "Cropland"]
-done_translation = " hrs. done at "
-construct_new_building_translation = "Construct new building"
+# level_translation = " Level "
+# village_center = "Buildings"
+# fields_types = ["Woodcutter", "Clay Pit", "Iron Mine", "Cropland"]
+# done_translation = " hrs. done at "
+# construct_new_building_translation = "Construct new building"
 
 class TravianPlayer(object):
     def __init__(self, username, password, server):
@@ -65,6 +65,18 @@ class TravianPlayer(object):
             return func(self, *args, **kwargs)
         return switch
 
+    def get_villages_information(self):
+        # self.driver
+        anchor = self.driver.find_element_by_css_selector("#sidebarBoxVillagelist")
+        anchor = anchor.find_elements_by_css_selector("a")
+        #print(list(map(lambda x: x.text,a)))
+        #a = a.find_elements_by_class_name("name")
+        _data_villages = pd.DataFrame({"village_id":[i for i in range(1,len(anchor)+1)],
+                                       "village_name": list(map(lambda x: x.find_element_by_class_name("name").text,anchor)),
+                                        "village_link":list(map(lambda x: x.get_attribute("href"), anchor))})
+        #_data_villages.to_csv("villages_information.csv", index = False, encoding="UTF-8")
+        return(_data_villages)
+
     @switch_to_hero
     def get_hero_health(self):
         power = self.driver.find_element_by_class_name("powervalue").text
@@ -75,9 +87,12 @@ class TravianPlayer(object):
         time.sleep(2)
         return(power)
 
-    @switch_to_hero_adventures
-    def go_to_hero_adventure(self, _at_least_health: int = 20):
-        _flag_hero_has_enough_health = _at_least_health < get_hero_health()
+    def go_to_hero_adventure(self, village_id: int, _at_least_health: int = 20):
+        _hero_health = self.get_hero_health()
+        self.switch_to_village(village_id)
+        self.switch_to_hero_adventures()
+        _flag_hero_has_enough_health = _at_least_health < _hero_health
+        #_flag_hero_has_enough_health=True
         _flag_are_there_adventures = len(self.driver.find_elements_by_class_name("gotoAdventure"))>0
         if (_flag_are_there_adventures and _flag_hero_has_enough_health):
             adventure_link = self.driver.find_element_by_class_name("gotoAdventure").get_attribute("href")
@@ -86,9 +101,14 @@ class TravianPlayer(object):
             button_adventure.click()
         else:
             print("There are no adventures for hero to go on or hero is not present in the village. Or not enough health.")
+        time.sleep(2)
 
     @switch_to_dorf1
     def create_data_frame_available_upgrades(self):
+        """
+        For current village, scrape the available tile upgrades and save it to ..\tile_upgrades.csv
+
+        """
         field_map = self.driver.find_element_by_css_selector('map#rx')
         fields = field_map.find_elements_by_css_selector("area")
 
@@ -103,7 +123,7 @@ class TravianPlayer(object):
                  "level":_level
                  }
         _data_pd = pd.DataFrame(_data).sort_values('level')
-        _data_pd.to_csv("upgrades.csv", index = False, encoding = "UTF-8")
+        _data_pd.to_csv("tile_upgrades.csv", index = False, encoding = "UTF-8")
 
 
     def do_trade_on_auctions(self):
@@ -113,15 +133,22 @@ class TravianPlayer(object):
         pass
 
 
+
     @switch_to_dorf2
-    def create_data_frame_available_buildings(self):
+    def create_data_frame_available_buildings(self, village_id: int):
         """
         We are checking for already built buildings and their levels.
 
 
         :return:
         """
-        print("Creating list of avaible buildings..")
+        try:
+            data_buildings_done = pd.read_csv("data_buildings_in_centrum.csv", encoding = "utf-8")
+            data_buildings_done = data_buildings_done[data_buildings_done['village_id'] != village_id]
+        except:
+            data_buildings_done = None
+
+        print("Creating list of available buildings..")
         path = "build.php?id="
 
         building_names = []
@@ -140,16 +167,21 @@ class TravianPlayer(object):
             titleInHeader_element = self.driver.find_element_by_class_name("titleInHeader")
             titleInHeader_element_text = titleInHeader_element.text
             strings_in_the_header = titleInHeader_element_text.split(level_translation)
-            building_names.append(strings_in_the_header[0])
+            building_name = strings_in_the_header[0]
+            building_names.append(building_name)
             level_of_the_building = 0 if len(strings_in_the_header)==1 else (int(strings_in_the_header[1]))
             building_levels.append(level_of_the_building)
 
-        data_buildings_dorf2 = pd.DataFrame({"building_name":building_names,
+        data_buildings_in_centrum = pd.DataFrame({
+                                             "building_name":building_names,
                                              "building_url": building_urls,
                                              "building_level":building_levels})
+        data_buildings_in_centrum["village_id"] = village_id
+        if data_buildings_done is not None:
+            data_buildings_in_centrum = data_buildings_in_centrum.append(data_buildings_done)
 
 
-        data_buildings_dorf2.to_csv("data_buildings_dorf2.csv", index=False, encoding = "utf-8")
+        data_buildings_in_centrum.to_csv("data_buildings_in_centrum.csv", index=False, encoding = "utf-8")
 
     @switch_to_dorf2
     def do_build_new_building(self, building_to_build: str):
@@ -194,59 +226,93 @@ class TravianPlayer(object):
                         upgrade_button.click()
                         break
 
+    @switch_to_dorf2
+    def switch_to_village(self, village_id):
+        df_villages = self.get_villages_information()
+        df_village_row = df_villages[df_villages['village_id'] == village_id]
+
+        if (df_village_row.shape[0] == 0):
+            raise Exception("Village with the given id " + str(village_id) + " not available.")
+
+        village_link = df_village_row.village_link.iloc[0]
+        self.driver.get(village_link)
 
     @switch_to_dorf2
-    def do_upgrade_building(self, building_to_upgrade: str, to_level: int):
+    def do_upgrade_building(self,village_id: int, building_to_upgrade: str, to_level: int):
         """
         Prerequisities: Only one building in village
         TODO:
         """
-        df_buildings_built = pd.read_csv("data_buildings_dorf2.csv", encoding = "UTF-8")
-        df_buildings_built = df_buildings_built.sort_values('building_level')
-        # print(df_buildings_built.columns)
-        building_row = df_buildings_built[(df_buildings_built['building_name'] == building_to_upgrade) & (df_buildings_built['building_level'] <20)]
-
+        time.sleep(random.randint(1,4))
+        self.switch_to_village(village_id)
         currently_beeing_upgraded = self.get_currently_beeing_upgraded_buildings()
         if currently_beeing_upgraded.shape[0] == 0:
-            _flag_can_upgrade_building = True
-        elif currently_beeing_upgraded[currently_beeing_upgraded['upgrade_type']=='building'].shape[0] == 0:
-            _flag_can_upgrade_building = True
+            #_flag_can_upgrade_building = True
+            print("No tile, no building is beeing upgraded.")
+        elif currently_beeing_upgraded[currently_beeing_upgraded['upgrade_type'] == 'building'].shape[0] == 0:
+            #_flag_can_upgrade_building = True
+            print("No builiding is beeing upgraded.")
         else:
-            print("Already upgrading some building.")
-            _flag_can_upgrade_building = False
-        if building_row.shape[0] ==0:
-            print("Building " + building_to_upgrade + " is not built, or has level 20. We should retry running list of built buildings.")
-        elif _flag_can_upgrade_building:
+            return
+            #raise Exception("Already upgrading some building. Not upgrading " + building_to_upgrade + ".")
 
-            print("Attempting upgrading building " + building_to_upgrade)
-            url_building = building_row['building_url'].iloc[0]
+        try:
+            df_buildings_built_raw = pd.read_csv("data_buildings_in_centrum.csv", encoding = "UTF-8")
+        except:
+            _flag_scan_run_already = True
+            self.create_data_frame_available_buildings(village_id)
+            df_buildings_built_raw = pd.read_csv("data_buildings_in_centrum.csv", encoding="UTF-8")
 
-            self.driver.get(url_building)
-            titleInHeader_element = self.driver.find_element_by_class_name("titleInHeader")
-            titleInHeader_element_text = titleInHeader_element.text
-            strings_in_the_header = titleInHeader_element_text.split(level_translation)
-            building_name_in_header = strings_in_the_header[0]
-            if building_name_in_header != building_to_upgrade:
-                warnings.warn ("We are not upgrading correct building. Rerun creation of dataframe for available buildings.")
+        df_buildings_built = df_buildings_built_raw[df_buildings_built_raw['village_id']==village_id]
 
-            current_level_building = 0 if len(strings_in_the_header) == 1 else (int(strings_in_the_header[1]))
-            if current_level_building < to_level:
-                upgrade_button = self.driver.find_element_by_css_selector('div.upgradeButtonsContainer div.section1 button')
-                if "green" in upgrade_button.get_attribute("class"):
-                    upgrade_button.click()
-                    # upgrade_time = self.driver.find_element_by_css_selector('div.upgradeButtonsContainer div.section1 inlineIcon').text[0:5]
-                    # print(upgrade_time)
-                    print("Upgrading building" )
-                    df_buildings_built[df_buildings_built["building_url"] == url_building]['building_level'] = df_buildings_built[df_buildings_built["building_url"] == url_building]['building_level'] +1
-                    df_buildings_built.to_csv("data_buildings_dorf2.csv", index=False, encoding = "UTF-8")
-                    # upgrade_time = upgrade_time.second+upgrade_time.minute*60+upgrade_time.hour*3600
-                    # self.time_to_wait = max(self.time_to_wait, 300)
-                else:
-                    print("Can not upgrade , not enough resources")
+        if df_buildings_built.shape[0] == 0:
+            _flag_scan_run_already = True
+            self.create_data_frame_available_buildings(village_id)
+            df_buildings_built_raw = pd.read_csv("data_buildings_in_centrum.csv", encoding="UTF-8")
+            df_buildings_built = df_buildings_built_raw[df_buildings_built_raw['village_id'] == village_id]
+            df_buildings_built = df_buildings_built.sort_values('building_level')
+
+        building_row = df_buildings_built[(df_buildings_built['building_name'] == building_to_upgrade) & (df_buildings_built['building_level'] <20)]
+
+        if building_row.shape[0] == 0:
+            if not(_flag_scan_run_already):
+                self.create_data_frame_available_buildings(village_id)
+                df_buildings_built_raw = pd.read_csv("data_buildings_in_centrum.csv", encoding="UTF-8")
+                df_buildings_built = df_buildings_built_raw[df_buildings_built_raw['village_id'] == village_id]
+                df_buildings_built = df_buildings_built.sort_values('building_level')
+                building_row = df_buildings_built[(df_buildings_built['building_name'] == building_to_upgrade) & (df_buildings_built['building_level'] < 20)]
+                if building_row.shape[0] == 0:
+                    raise Exception("No such building in the village to upgrade.")
             else:
-                print("Level already reached.")
+                raise Exception("No such building in the village to upgrade.")
+
+
+
+        print("Attempting upgrading building " + building_to_upgrade)
+        url_building = building_row['building_url'].iloc[0]
+
+        self.driver.get(url_building)
+        titleInHeader_element = self.driver.find_element_by_class_name("titleInHeader")
+        titleInHeader_element_text = titleInHeader_element.text
+        strings_in_the_header = titleInHeader_element_text.split(level_translation)
+        building_name_in_header = strings_in_the_header[0]
+        if building_name_in_header != building_to_upgrade:
+            warnings.warn ("We are not upgrading correct building. Rerun creation of dataframe for available buildings.")
+
+        current_level_building = 0 if len(strings_in_the_header) == 1 else (int(strings_in_the_header[1]))
+        if current_level_building < to_level:
+            upgrade_button = self.driver.find_element_by_css_selector('div.upgradeButtonsContainer div.section1 button')
+            if "green" in upgrade_button.get_attribute("class"):
+                upgrade_button.click()
+
+                print("Upgrading building" )
+
+                # df_buildings_built_raw[df_buildings_built_raw["building_url"] == url_building]['building_level'] = df_buildings_built[df_buildings_built["building_url"] == url_building]['building_level'] +1
+                # df_buildings_built.to_csv("data_buildings_in_centrum.csv", index=False, encoding = "UTF-8")
+            else:
+                print("Can not upgrade , not enough resources")
         else:
-            print("Already upgrading a building ...")
+            print("Level already reached.")
 
     def storages_almost_full_check(self):
         """
@@ -264,13 +330,14 @@ class TravianPlayer(object):
         pass
 
     @switch_to_dorf1
-    def upgrade_tile(self, do_not_upgrade=None):
+    def upgrade_tile(self, village_id: int, do_not_upgrade=None):
         """
 
         :type do_not_upgrade: list of field types not to upgrade
         """
         if do_not_upgrade is None:
             do_not_upgrade = []
+        self.switch_to_village(village_id)
         self.create_data_frame_available_upgrades()
         currently_beeing_upgraded = self.get_currently_beeing_upgraded_buildings()
         # print(currently_beeing_upgraded)
@@ -282,7 +349,8 @@ class TravianPlayer(object):
             _flag_can_upgrade_tile = False
 
         if _flag_can_upgrade_tile:
-            _data_upgrades = pd.read_csv("upgrades.csv", encoding = "UTF-8")
+            _data_upgrades = pd.read_csv("tile_upgrades.csv", encoding = "UTF-8")
+            _data_upgrades.sort_values("level",inplace=True)
             _data_upgrades = _data_upgrades[_data_upgrades.apply(lambda x: not(x['type'] in do_not_upgrade),1)]
             upgrade_level = _data_upgrades['level'].tolist()[0]
             upgrade_link = _data_upgrades['link'].tolist()[0]
@@ -302,6 +370,7 @@ class TravianPlayer(object):
                 self.time_to_wait = max(self.time_to_wait, 300)
         else:
             print("Already upgrading a field ...")
+    time.sleep(2)
 
     @switch_to_dorf1
     def get_currently_beeing_upgraded_buildings(self) -> pd.DataFrame:
@@ -331,54 +400,60 @@ class TravianPlayer(object):
             return pd.DataFrame(data_temp)
 
 
+from config import login_config
 
-
-# player1 = TravianPlayer("Olie", "mu694ek","https://ts20.czsk.travian.com/")
-
-player1 = TravianPlayer("Olie", "mu694ek","https://ts8.anglosphere.travian.com/")
+player1 = TravianPlayer(login_config["username"], login_config["password"],login_config["server"])
+# player1.do_upgrade_building(1, )
+#player1 = TravianPlayer("Olie", "mu694ek","https://ts8.anglosphere.travian.com/")
 
 
 player1.login()
-player1.get_hero_health()
-# player2.login()
-
-
-#player1.do_build_new_building("City Wall")
-# player1.create_data_frame_available_buildings()
-#player1.do_upgrade_building("Main Building", 3)
-#player1.upgrade_tile("Obilné pole")
-#player1.create_data_frame_available_buildings()
-# player1.create_data_frame_available_buildings()
-# player1.go_to_hero_adventure()
-
-# print(player1.driver.find_element_by_css_selector("div.buildDuration").text)
-# print(player1.driver.find_element_by_css_selector("div.name").text)
-
+player1.go_to_hero_adventure(2)
+#player1.upgrade_tile(1,["Obilné pole"])
+#player1.do_upgrade_building(1,"Hlavní budova", 15)
+#player1.go_to_hero_adventure()
 #
-# player1.create_data_frame_available_buildings()
-while True:
-    print("Checking available upgrades")
-    try:
-        # player1.do_upgrade_building("Rezidence", 10)
-        print("Trying to upgrade tile")
-        # player1.do_upgrade_building("Úkryt", 10)
-        player1.do_upgrade_building("Tržiště", 10)
-        #player1.do_upgrade_building("Rezidence", 10)
-        #player1.upgrade_tile(["Obilné pole"])
-        player1.do_upgrade_building("Hlavní budova", 10)
-        #player1.do_upgrade_building("Main Building", 5)
-        #player1.do_upgrade_building("Barracks", 3)
-        #player1.do_upgrade_building("Granary", 4)
-        player1.upgrade_tile()
-    except:
-        pass
-    try:
-        time_to_wait = player1.driver.find_element_by_css_selector("div.buildDuration").text[0:5]
-        time_to_wait = time_to_wait + "00" if (time_to_wait[-1] == ":") else time_to_wait+ ":00"
-    except:
-        print("Nothing beeing upgraded")
-        time_to_wait = "00:04:00"
-    print("Time sleeping approximately: " + time_to_wait)
-    pt = datetime.datetime.strptime(time_to_wait.strip(),'%H:%M:%S')
-    time_to_wait = pt.second+pt.minute*60+pt.hour*3600
-    time.sleep(max(time_to_wait,30) + random.randint(0,10))
+# while True:
+#     print("Checking available upgrades")
+#     try:
+#         # player1.do_upgrade_building("Rezidence", 10)
+#         player1.driver.get("https://ts20.czsk.travian.com/dorf1.php?newdid=10778&")
+#         print("Trying to upgrade tile")
+#         player1.upgrade_tile(1,["Obilné pole"])
+#         player1.do_upgrade_building(1,"Hlavní budova", 15)
+#         player1.do_upgrade_building(1, "Tržiště", 18)
+#         player1.do_upgrade_building(1, "Sýpka", 14)
+#         #player1.do_upgrade_building(1, "Tržiště", 15)
+#         #player1.do_upgrade_building(2, "Tržiště", 8)
+#
+#         #player1.do_upgrade_building(2, "Mlýn", 3)
+#         player1.do_upgrade_building(2, "Sýpka", 16)
+#         player1.do_upgrade_building(2, "Hlavní budova", 10)
+#         player1.do_upgrade_building(2,"Sklad surovin", 13)
+#         player1.do_upgrade_building(2, "Tržiště",10)
+#
+#         player1.upgrade_tile(2)
+#         #player1.do_upgrade_building("Rezidence", 10)
+#         # player1.upgrade_tile(["Obilné pole"])
+#         #player1.do_upgrade_building("Hlavní budova", 10)
+#         #player1.do_upgrade_building("Akademie", 10)
+#         #player1.do_upgrade_building("Sýpka", 13)
+#         #player1.do_upgrade_building("Sklad surovin", 13)
+#         #player1.do_upgrade_building("Sýpka", 4)
+#         #player1.do_upgrade_building("Main Building", 5)
+#         #player1.do_upgrade_building("Barracks", 3)
+#         #player1.do_upgrade_building("Granary", 4)
+#         #player1.upgrade_tile()
+#
+#     except:
+#         pass
+#     try:
+#         time_to_wait = player1.driver.find_element_by_css_selector("div.buildDuration").text[0:5]
+#         time_to_wait = time_to_wait + "59" if (time_to_wait[-1] == ":") else time_to_wait+ ":59"
+#     except:
+#         print("Nothing beeing upgraded")
+#         time_to_wait = "00:25:00"
+#     print("Time sleeping approximately: " + time_to_wait)
+#     pt = datetime.datetime.strptime(time_to_wait.strip(),'%H:%M:%S')
+#     time_to_wait = pt.second+pt.minute*60+pt.hour*3600
+#     time.sleep(max(time_to_wait,30) + random.randint(0,10))
